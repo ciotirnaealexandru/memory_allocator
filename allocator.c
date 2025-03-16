@@ -7,7 +7,7 @@
 #define MANAGING_SIZE 12
 
 char *arena;
-u_int32_t arena_size, start_index;
+uint32_t arena_size, start_index;
 
 void initialize(uint32_t size)
 {
@@ -23,13 +23,13 @@ void finalize()
 
 void dump()
 {
-    int i, j;
+    uint32_t i, j;
     for (i = 0; i < arena_size / 16; i++)
     {
         printf("%08X\t", i * 16);
         for (j = 0; j < 16; j++)
         {
-            char value = *(arena + i * 16 + j);
+            unsigned char value = *(arena + i * 16 + j);
             printf("%02X ", value);
             if (j == 7)
                 printf(" ");
@@ -41,7 +41,7 @@ void dump()
         printf("%08X\t", arena_size / 16 * 16);
     for (j = 0; j < arena_size % 16; j++)
     {
-        char value = *(arena + arena_size - arena_size % 16 + j);
+        unsigned char value = *(arena + arena_size - arena_size % 16 + j);
         printf("%02X ", value);
         if (j == 7)
             printf(" ");
@@ -61,10 +61,34 @@ void alloc(uint32_t size)
         *(uint32_t *)(arena + current_index + 4) == 0 &&
         *(uint32_t *)(arena + current_index + 8) == 0)
     {
+        if (arena_size >= MANAGING_SIZE + size)
+        {
+            space_found = 1;
+            space_index = 0;
+
+            // add new block data
+            *(uint32_t *)(arena + space_index) = 0;
+            *(uint32_t *)(arena + space_index + 4) = 0;
+            *(uint32_t *)(arena + space_index + 8) = size;
+        }
+    }
+    // implement check before index_start
+    else if (start_index >= MANAGING_SIZE + size)
+    {
         space_found = 1;
         space_index = 0;
-    }
 
+        // add new block data
+        *(uint32_t *)(arena + space_index) = start_index;
+        *(uint32_t *)(arena + space_index + 4) = 0;
+        *(uint32_t *)(arena + space_index + 8) = size;
+
+        // change the previous_index of the next block
+        *(uint32_t *)(arena + start_index + 4) = 0;
+
+        start_index = 0;
+    }
+    // implement check for every space after an existing block
     else
     {
         while (current_index < arena_size)
@@ -87,6 +111,22 @@ void alloc(uint32_t size)
                 break;
             current_index = next_index;
         }
+
+        if (space_found)
+        {
+            // add new block data
+            uint32_t next_index = *(uint32_t *)(arena + current_index);
+
+            *(uint32_t *)(arena + space_index) = next_index;
+            *(uint32_t *)(arena + space_index + 4) = current_index;
+            *(uint32_t *)(arena + space_index + 8) = size;
+
+            // update previous block next_index
+            *(uint32_t *)(arena + current_index) = space_index;
+
+            if (next_index != 0)
+                *(uint32_t *)(arena + next_index + 4) = space_index;
+        }
     }
 
     if (!space_found)
@@ -95,15 +135,39 @@ void alloc(uint32_t size)
         return;
     }
 
-    // add new block data
-    *(uint32_t *)(arena + space_index) = 0;
-    *(uint32_t *)(arena + space_index + 4) = current_index;
-    *(uint32_t *)(arena + space_index + 8) = size;
-
-    // update previous block next index
-    *(uint32_t *)(arena + current_index) = space_index;
-
     printf("%d\n", space_index + MANAGING_SIZE);
+}
+
+void free_block(uint32_t data_index)
+{
+    uint32_t block_index = data_index - MANAGING_SIZE;
+
+    uint32_t next_index = *(uint32_t *)(arena + block_index);
+    uint32_t previous_index = *(uint32_t *)(arena + block_index + 4);
+    uint32_t data_size = *(uint32_t *)(arena + block_index + 8);
+
+    // if it's not the first block
+    if (start_index != block_index)
+    {
+        // change the next_index of the previous block
+        *(int32_t *)(arena + previous_index) = next_index;
+    }
+    // if it's the first block then i need to change the start_index
+    else
+    {
+        start_index = next_index;
+    }
+
+    // if it's not the last block
+    if (next_index != 0)
+    {
+        // change the previous_index of the next block
+        *(uint32_t *)(arena + next_index + 4) = previous_index;
+    }
+
+    // change block values to zero
+    uint32_t block_end = block_index + MANAGING_SIZE + data_size;
+    memset(arena + block_index, 0, block_end - block_index);
 }
 
 void parse_command(char *cmd)
@@ -147,7 +211,7 @@ void parse_command(char *cmd)
             goto invalid_command;
         uint32_t index = atoi(index_str);
 
-        // FREE
+        free_block(index);
     }
     else if (strcmp(cmd_name, "FILL") == 0)
     {
