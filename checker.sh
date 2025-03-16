@@ -22,7 +22,7 @@ TEST_RANDOM_POINTS="10"
 TEST_BONUS_POINTS="10"
 
 function print_header {
-    echo "============== Tema 2 ============================="
+    echo "============== MEMORY ALLOCATOR ==================="
 }
 
 
